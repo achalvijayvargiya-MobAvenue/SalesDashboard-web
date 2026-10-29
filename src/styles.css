@@ -169,13 +169,25 @@ pre { background: var(--panel); border-radius: 12px; padding: 0.8rem; overflow: 
   background: var(--info-bg); border-radius: 0 12px 12px 0;
 }
 .boot-error { max-width: 640px; margin: 4rem auto; padding: 0 1rem; }
-.login { text-align: center; }
-.login img { height: 52px; margin-bottom: 1.2rem; }
-.login .callout { text-align: left; }
-a.signin {
-  display: inline-block; margin-top: 0.6rem; background: var(--orange); color: var(--orange-ink);
-  border-radius: 999px; padding: 0.7rem 1.1rem; font-weight: 650; text-decoration: none;
+.login {
+  display: flex; flex-direction: column; align-items: center;
+  text-align: center; max-width: 420px;
 }
+.login img {
+  display: block; height: 48px; width: auto; max-width: 220px;
+  object-fit: contain; margin: 0 0 1.2rem;
+}
+.login h1 { margin: 0 0 0.45rem; }
+.login p { margin: 0; color: var(--muted); }
+.login .callout { text-align: left; width: 100%; margin-top: 1rem; }
+a.signin {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.55rem;
+  margin-top: 1.2rem; background: #fff; color: #1f1f1f;
+  border-radius: 999px; padding: 0.55rem 1rem; font-weight: 600;
+  font-size: 0.95rem; text-decoration: none; line-height: 1;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+a.signin .google-g { width: 18px; height: 18px; flex-shrink: 0; display: block; }
 .top .account { margin-left: auto; display: flex; align-items: center; gap: 0.75rem; color: var(--muted); font-size: 0.85rem; }
 
 @media (max-width: 960px) {
