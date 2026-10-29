@@ -26,8 +26,11 @@ export function MetricGrid({ metrics }: { metrics: Metric[] }) {
   );
 }
 
-function numeric(key: string): boolean {
-  return /payout|cpi|cvr|install|organic|bid|impression|click|cost/i.test(key);
+function cellClass(key: string): string | undefined {
+  if (/payout|cpi|cvr|install|organic|bid|impression|click|cost|value/i.test(key)) return "num";
+  if (/formula|calculation/i.test(key)) return "formula";
+  if (/^step$/i.test(key)) return "step";
+  return undefined;
 }
 
 export function DataTable({ table }: { table: TableData }) {
@@ -37,8 +40,8 @@ export function DataTable({ table }: { table: TableData }) {
         <thead>
           <tr>
             {table.columns.map((column) => (
-              <th key={column.key} className={numeric(column.key) ? "num" : undefined}>
-                <span>{column.key}</span>
+              <th key={column.key} className={cellClass(column.key)}>
+                {column.key}
                 {column.help ? <Info text={column.help} /> : null}
               </th>
             ))}
@@ -49,11 +52,14 @@ export function DataTable({ table }: { table: TableData }) {
             <tr key={`${row["Bundle id"] ?? index}-${index}`}>
               {table.columns.map((column) => {
                 const value = row[column.key] ?? "";
+                const cls = cellClass(column.key);
                 return (
-                  <td key={column.key} className={numeric(column.key) ? "num" : undefined}>
-                    {column.key === "Bundle id" ? <code>{value}</code> : column.key === "Same store category" && value
-                      ? <span className={value === "Yes" ? "pill yes" : "pill"}>{value}</span>
-                      : value}
+                  <td key={column.key} className={cls}>
+                    {column.key === "Bundle id"
+                      ? <code>{value}</code>
+                      : column.key === "Same store category" && value
+                        ? <span className={value === "Yes" ? "pill yes" : "pill"}>{value}</span>
+                        : value}
                   </td>
                 );
               })}

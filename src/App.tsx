@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { getJSON, isAbort, postJSON } from "./api";
+import { apiBase, AuthRequired, getJSON, isAbort, postJSON } from "./api";
 import { BriefPanel } from "./components/Brief";
 import { Comparison } from "./components/Comparison";
 import { ConfigPanel } from "./components/ConfigPanel";
@@ -7,7 +7,26 @@ import { DealSetup } from "./components/DealSetup";
 import { Callout, DataTable, MetricGrid } from "./components/widgets";
 import type { Bootstrap, BriefView, ComparisonOut, DealIn, DealOut, LookupOk, LookupOut } from "./types";
 
+type Account = { email: string; name: string };
+
+const AUTH_ERRORS: Record<string, string> = {
+  domain: "That Google account is not a @mobavenue.com account.",
+  denied: "Google sign-in was cancelled.",
+  failed: "Google sign-in did not complete. Try again.",
+};
+
+function noteError(reason: unknown, fallback: string, setMessage: (message: string) => void, onSignedOut: () => void) {
+  if (reason instanceof AuthRequired) {
+    onSignedOut();
+    return;
+  }
+  if (!isAbort(reason)) setMessage(reason instanceof Error ? reason.message : fallback);
+}
+
 export default function App() {
+  const [account, setAccount] = useState<Account | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
   const [boot, setBoot] = useState<Bootstrap | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
   const [dealIn, setDealIn] = useState<DealIn | null>(null);
@@ -31,13 +50,40 @@ export default function App() {
   const inFlightUrl = useRef<string | null>(null);
 
   useEffect(() => {
-    getJSON<Bootstrap>("/api/bootstrap")
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("auth_error");
+    if (code) {
+      setAuthError(AUTH_ERRORS[code] ?? "Google sign-in did not complete. Try again.");
+      window.history.replaceState({}, "", "/");
+    }
+    getJSON<Account>("/api/auth/me")
+      .then((me) => setAccount(me))
+      .catch(() => setAccount(null))
+      .finally(() => setAuthReady(true));
+  }, []);
+
+  useEffect(() => {
+    if (!account) return;
+    const controller = new AbortController();
+    getJSON<Bootstrap>("/api/bootstrap", controller.signal)
       .then((loaded) => {
         setBoot(loaded);
         setDealIn(loaded.defaults);
       })
-      .catch((reason: unknown) => setBootError(reason instanceof Error ? reason.message : "The API is not running."));
-  }, []);
+      .catch((reason: unknown) => {
+        if (reason instanceof AuthRequired) setAccount(null);
+        else if (!isAbort(reason)) setBootError(reason instanceof Error ? reason.message : "The API is not running.");
+      });
+    return () => controller.abort();
+  }, [account]);
+
+  function signOut() {
+    fetch(`${apiBase()}/api/auth/logout`, { method: "POST", credentials: "include" }).finally(() => {
+      setAccount(null);
+      setBoot(null);
+      setDealIn(null);
+    });
+  }
 
   const category = lookup ? lookup.app.category : lookupError ? manualCategory : "";
 
@@ -56,9 +102,7 @@ export default function App() {
           setDeal(next);
           setDealError(null);
         })
-        .catch((reason: unknown) => {
-          if (!isAbort(reason)) setDealError(reason instanceof Error ? reason.message : "Could not calculate the deal.");
-        });
+        .catch((reason: unknown) => noteError(reason, "Could not calculate the deal.", setDealError, () => setAccount(null)));
     }, 200);
     return () => {
       controller.abort();
@@ -76,7 +120,8 @@ export default function App() {
       postJSON<ComparisonOut>("/api/comparison", { ...dealIn, category, verticals, products }, controller.signal)
         .then(setComparison)
         .catch((reason: unknown) => {
-          if (!isAbort(reason)) setComparison(null);
+          if (reason instanceof AuthRequired) setAccount(null);
+          else if (!isAbort(reason)) setComparison(null);
         });
     }, 200);
     return () => {
@@ -101,7 +146,8 @@ export default function App() {
       });
       setBrief(record);
     } catch (reason: unknown) {
-      setBriefError(reason instanceof Error ? reason.message : "The sales brief failed.");
+      if (reason instanceof AuthRequired) setAccount(null);
+      else setBriefError(reason instanceof Error ? reason.message : "The sales brief failed.");
     } finally {
       setBriefBusy(false);
     }
@@ -152,7 +198,8 @@ export default function App() {
       if (saved.record) setBrief(saved.record);
       else if (boot?.auto_generate_brief) await generateBrief(result, organic, trimmed);
     } catch (reason: unknown) {
-      if (seq === lookupSeq.current) setLookupError(reason instanceof Error ? reason.message : "Lookup failed.");
+      if (reason instanceof AuthRequired) setAccount(null);
+      else if (seq === lookupSeq.current) setLookupError(reason instanceof Error ? reason.message : "Lookup failed.");
     } finally {
       if (inFlightUrl.current === trimmed) inFlightUrl.current = null;
       if (seq === lookupSeq.current) setLookupBusy(false);
@@ -171,12 +218,25 @@ export default function App() {
         setDealIn((current) => current && { ...current, organic_installs_per_day: result.apply_organic as number });
       }
     } catch (reason: unknown) {
-      setLookupError(reason instanceof Error ? reason.message : "Could not refresh the estimate.");
+      if (reason instanceof AuthRequired) setAccount(null);
+      else setLookupError(reason instanceof Error ? reason.message : "Could not refresh the estimate.");
     } finally {
       setLookupBusy(false);
     }
   }
 
+  if (!authReady) return <main className="boot-error"><p>Loading Sales Planner…</p></main>;
+  if (!account) {
+    return (
+      <main className="boot-error login">
+        <img src="/mobavenue-logo-dark.png" alt="Mobavenue" />
+        <h1>Sales Planner</h1>
+        <p>Sign in with your @mobavenue.com Google account.</p>
+        {authError ? <p className="callout error">{authError}</p> : null}
+        <a className="signin" href={`${apiBase()}/api/auth/google`}>Sign in with Google</a>
+      </main>
+    );
+  }
   if (bootError) {
     return <main className="boot-error"><h1>Sales Planner</h1><p>{bootError}</p><p>Start the API, then reload this page. In development the page proxies <code>/api</code> to the backend.</p></main>;
   }
@@ -190,6 +250,10 @@ export default function App() {
         <div>
           <h1>Sales Planner</h1>
           <p>Deal pricing · CTA / VTA split · Client benchmarks</p>
+        </div>
+        <div className="account">
+          <span>{account.email}</span>
+          <button type="button" onClick={signOut}>Sign out</button>
         </div>
       </header>
       <div className="workspace">
